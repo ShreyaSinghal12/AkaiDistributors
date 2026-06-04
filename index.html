@@ -204,8 +204,10 @@ function openScanner(){
 
       if(!result) return;
 
-      let cleanQR = result.getText();
-
+      let cleanQR = result
+        .getText()
+        .trim();
+  
       if(
         cleanQR === lastScanLocal &&
         Date.now() - lastScanTime < 600
