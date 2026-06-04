@@ -4,6 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
 <script src="https://unpkg.com/@zxing/library@latest"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
@@ -177,7 +178,6 @@ function openScanner(){
       ZXing.BarcodeFormat.QR_CODE,
       ZXing.BarcodeFormat.CODE_128,
       ZXing.BarcodeFormat.DATA_MATRIX
-    
     ]
   );
 
@@ -207,7 +207,7 @@ function openScanner(){
 
       if(
         cleanQR === lastScanLocal &&
-        Date.now() - lastScanTime < 800
+        Date.now() - lastScanTime < 600
       ){
         return;
       }
