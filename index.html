@@ -2,8 +2,9 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+  
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
@@ -32,7 +33,7 @@ button {
 }
 
 #readerBox { display:none; position:relative; }
-#reader { width:220px; margin:auto; }
+#reader { width:180px; margin:auto; }
 
 #closeScan {
   position:absolute;
@@ -85,7 +86,7 @@ td,th { padding:10px; text-align:center; }
 
 <div id="readerBox">
 <button id="closeScan" onclick="closeScanner()">×</button>
-<div id="reader"></div>
+<video id="reader" style="width:180px;"></video>
 </div>
 
 <table>
@@ -133,6 +134,7 @@ let items = {};
 let scanner, scanning=false;
 let manualMode = false;
 let scanLock = false;
+let lastScan = "";   // ✅ NEW (prevent duplicate)
 
 const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
@@ -156,72 +158,134 @@ function loadDealers(){
 }
 window.onload = loadDealers;
 
-/* SCANNER (UNCHANGED) */
+/* ✅ ULTRA FAST + AD1 FIXED SCANNER */
+let codeReader;
+
 function openScanner(){
-  document.getElementById("readerBox").style.display="block";
+
+  document.getElementById("readerBox").style.display = "block";
+
   if(scanning) return;
+  scanning = true;
 
-  scanner = new Html5Qrcode("reader");
+  const videoElement = document.getElementById("reader");
 
-  scanner.start(
-  { facingMode: "environment" },
-  {
-    fps: 15,
-    qrbox: { width: 250, height: 120 },
-    formatsToSupport: [
-      Html5QrcodeSupportedFormats.QR_CODE,
-      Html5QrcodeSupportedFormats.CODE_128
+  const hints = new Map();
+
+  hints.set(
+    ZXing.DecodeHintType.POSSIBLE_FORMATS,
+    [
+      ZXing.BarcodeFormat.QR_CODE,
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.DATA_MATRIX
+    
     ]
-  },
-    qr => {
+  );
 
-      // ✅ CLEAN QR / BARCODE DATA
-      let cleanQR = qr.replace(/\/\/(1|5|10)$/,'').trim();
+  codeReader = new ZXing.BrowserMultiFormatReader(hints);
 
-      if(scanLock) return;
-      scanLock = true;
+  let scanLockLocal = false;
+  let lastScanLocal = "";
+  let lastScanTime = 0;
+
+  codeReader.decodeFromConstraints(
+    {
+      video:{
+        facingMode:{ ideal:"environment" },
+
+        width:{ ideal:640 },
+        height:{ ideal:480 }
+      }
+    },
+
+    videoElement,
+
+    (result, err)=>{
+
+      if(!result) return;
+
+      let cleanQR = result.getText();
+
+      if(
+        cleanQR === lastScanLocal &&
+        Date.now() - lastScanTime < 800
+      ){
+        return;
+      }
+
+      if(scanLockLocal) return;
+
+      scanLockLocal = true;
+
+      lastScanLocal = cleanQR;
+      lastScanTime = Date.now();
 
       beep.currentTime = 0;
-      beep.play();
+      beep.play().catch(()=>{});
 
-      fetch(API_URL+"?uid="+encodeURIComponent(cleanQR))
+      fetch(API_URL + "?uid=" + encodeURIComponent(cleanQR))
       .then(r=>r.json())
       .then(data=>{
 
         if(!data.variant){
-          alert("❌ Not Found - "+cleanQR);
+
+          alert("❌ Not Found - " + cleanQR);
+
+          setTimeout(()=>{
+            scanLockLocal = false;
+          },300);
+
           return;
         }
 
         if(!items[data.variant]){
-          items[data.variant] = {
+          items[data.variant]={
             variant:data.variant,
             qty:1,
             mrp:Number(data.mrp)||0
           };
-        } else {
+        }else{
           items[data.variant].qty++;
         }
 
         render();
+
+        setTimeout(()=>{
+          scanLockLocal = false;
+        },1000);
+
+      })
+      .catch(()=>{
+        scanLockLocal = false;
       });
 
-      setTimeout(()=>scanLock=false,1500);
     }
+
   );
 
-  scanning=true;
 }
-
+  
 /* KEEP ALL YOUR FUNCTIONS SAME BELOW (NO CHANGE) */
 
 function closeScanner(){
-  if(scanner){
-    scanner.stop().then(()=>{
-      scanning=false;
-      readerBox.style.display="none";
-    });
+
+  document.getElementById("readerBox").style.display="none";
+
+  scanning = false;
+
+  if(codeReader){
+    codeReader.reset();
   }
+
+  const reader = document.getElementById("reader");
+
+  if(reader.srcObject){
+    reader.srcObject.getTracks().forEach(track=>{
+      track.stop();
+    });
+    reader.srcObject = null;
+  }
+
 }
 
 function toggleEdit(){
@@ -278,7 +342,6 @@ function checkFields(){
     return false;
   }
 
-  /* ✅ ADDED */
   if(!photoData){
     alert("Capture Confirmation Photo");
     return false;
@@ -342,7 +405,6 @@ function download(){
 
   html+=`<tr><td><b>Total</b></td><td><b>${tq}</b></td><td><b>${tm}</b></td></tr></table>`;
 
-  /* ✅ ADDED PHOTO */
   html+=`<br><div style="text-align:center;"><img src="${photoData}" width="120"></div>`;
 
   bill.innerHTML=html;
@@ -362,7 +424,6 @@ function submitData(){
 
   if(!checkFields()) return;
 
-  // ✅ FIX: define BEFORE fetch
   const cleanItems = Object.values(items).map(i => ({
     variant: String(i.variant).trim(),
     qty: Number(i.qty) || 0
@@ -370,10 +431,6 @@ function submitData(){
 
   fetch(API_URL,{
     method:"POST",
-
-    // ❌ NO headers
-    // ❌ NO mode: no-cors
-
     body: new URLSearchParams({
       data: JSON.stringify({
         challan: String(challan.value).trim(),
@@ -400,7 +457,6 @@ function submitData(){
       throw new Error(data.message || "Server error");
     }
 
-    // ✅ KEEP YOUR EXISTING LOGIC
     let temp = {};
     (data.notMatched || []).forEach(i=>{
       temp[i.variant] = i;
@@ -423,7 +479,6 @@ function submitData(){
   });
 
 }
- 	
 
 </script>
 
