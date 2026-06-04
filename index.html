@@ -3,7 +3,6 @@
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-<script src="https://unpkg.com/@zxing/library@latest"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
@@ -86,7 +85,7 @@ td,th { padding:10px; text-align:center; }
 
 <div id="readerBox">
 <button id="closeScan" onclick="closeScanner()">×</button>
-<video id="reader" style="width:180px;"></video>
+<div id="reader" style="width:180px; margin:auto;"></div>
 </div>
 
 <table>
