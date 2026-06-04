@@ -134,7 +134,6 @@ let items = {};
 let scanner, scanning=false;
 let manualMode = false;
 let scanLock = false;
-let lastScan = "";   // ✅ NEW (prevent duplicate)
 let lastScanLocal = "";
 let lastScanTime = 0;
 
@@ -189,12 +188,14 @@ function openScanner(){
 
   let scanLockLocal = false;
 
-  if (
-    cleanQR === lastScanLocal &&
-    Date.now() - lastScanTime < 500
-  ){
+  const now = Date.now();
+
+  if (cleanQR === lastScanLocal && (now - lastScanTime < 800)) {
     return;
   }
+
+  lastScanLocal = cleanQR;
+  lastScanTime = now;
 
   codeReader.decodeFromConstraints(
     {
@@ -204,7 +205,7 @@ function openScanner(){
         width: { ideal: 1280 },
         height: { ideal: 720 },
 
-        frameRate: { ideal: 60 },
+        frameRate: { ideal: 30, max: 30 },
 
         advanced: [
           { focusMode: "continuous" },
@@ -240,7 +241,7 @@ function openScanner(){
       // auto release lock fast (parallel to API)
       setTimeout(()=>{
         scanLockLocal = false;
-      },300);
+      },500);
 
       lastScanLocal = cleanQR;
       lastScanTime = Date.now();
