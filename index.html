@@ -188,15 +188,6 @@ function openScanner(){
 
   let scanLockLocal = false;
 
-  const now = Date.now();
-
-  if (cleanQR === lastScanLocal && (now - lastScanTime < 800)) {
-    return;
-  }
-
-  lastScanLocal = cleanQR;
-  lastScanTime = now;
-
   codeReader.decodeFromConstraints(
     {
       video:{
@@ -227,12 +218,14 @@ function openScanner(){
         .replace(/\s/g,"")
         .replace(/\/\/(1|5|10)/g,"");
 
-      if(
-        cleanQR === lastScanLocal &&
-        Date.now() - lastScanTime < 600
-      ){
+      const now = Date.now();
+
+      if (cleanQR === lastScanLocal && (now - lastScanTime < 800)) {
         return;
       }
+
+      lastScanLocal = cleanQR;
+      lastScanTime = now;
 
       if(scanLockLocal) return;
 
