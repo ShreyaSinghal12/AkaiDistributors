@@ -148,7 +148,7 @@ function openScanner() {
   };
 
   scanner.start(
-    { facingMode: "environment" },
+    { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
     config,
     (code) => {
       if (scanLock) return;
