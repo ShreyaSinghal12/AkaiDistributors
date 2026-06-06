@@ -84,7 +84,7 @@ td,th { padding:10px; text-align:center; }
 <button onclick="toggleEdit()">Manual Edit</button>
 
 <div id="readerBox">
-<button id="closeScan" onclick="closeScanner()">×</button>
+<button id="closeScan" onclick="closeScanner()">x</button>
 <div id="reader"></div>
 </div>
 
@@ -109,7 +109,6 @@ td,th { padding:10px; text-align:center; }
 </tfoot>
 </table>
 
-<!-- ✅ ADDED ONLY -->
 <button onclick="openCamera()">Confirmation</button>
 
 <div id="cameraBox" style="display:none;text-align:center;">
@@ -136,7 +135,6 @@ let scanLock = false;
 
 const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
-/* ✅ ADDED */
 let photoData = "";
 let stream;
 
@@ -156,16 +154,33 @@ function loadDealers(){
 }
 window.onload = loadDealers;
 
-/* SCANNER (UNCHANGED) */
+/* SCANNER */
 function openScanner(){
   document.getElementById("readerBox").style.display="block";
   if(scanning) return;
 
   scanner = new Html5Qrcode("reader");
 
+  // ✅ FIX: support both QR codes AND 1D barcodes (EAN-13, CODE-128, CODE-39 etc.)
+  const formats = [
+    Html5QrcodeSupportedFormats.QR_CODE,
+    Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.ITF,
+    Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E,
+    Html5QrcodeSupportedFormats.DATA_MATRIX
+  ];
+
   scanner.start(
     { facingMode:"environment" },
-    { fps:20, qrbox:180 },
+    {
+      fps: 20,
+      qrbox: { width: 280, height: 100 },   // wide rectangle suits barcodes
+      formatsToSupport: formats
+    },
     qr => {
 
       if(scanLock) return;
@@ -179,7 +194,7 @@ function openScanner(){
       .then(data=>{
 
         if(!data.variant){
-          alert("❌ Not Found - "+qr);
+          alert("Not Found - "+qr);
           return;
         }
 
@@ -202,8 +217,6 @@ function openScanner(){
 
   scanning=true;
 }
-
-/* KEEP ALL YOUR FUNCTIONS SAME BELOW (NO CHANGE) */
 
 function closeScanner(){
   if(scanner){
@@ -233,12 +246,12 @@ function render(){
       <td>${manualMode ? `<input value="${i.variant}">` : i.variant}</td>
       <td>${manualMode ? `<input type="number" value="${i.qty}" onchange="items['${key}'].qty=Number(this.value);render()">` : i.qty}</td>
       <td>${manualMode ? `<input type="number" value="${i.mrp}" onchange="items['${key}'].mrp=Number(this.value);render()">` : i.mrp}</td>
-      ${manualMode ? `<td><button onclick="removeItem('${key}')">➖</button></td>` : `<td></td>`}
+      ${manualMode ? `<td><button onclick="removeItem('${key}')">Remove</button></td>` : `<td></td>`}
     </tr>`;
   });
 
   if(manualMode){
-    html+=`<tr><td colspan="4"><button onclick="addItem()">➕ Add Item</button></td></tr>`;
+    html+=`<tr><td colspan="4"><button onclick="addItem()">+ Add Item</button></td></tr>`;
   }
 
   tbody.innerHTML=html;
@@ -268,7 +281,6 @@ function checkFields(){
     return false;
   }
 
-  /* ✅ ADDED */
   if(!photoData){
     alert("Capture Confirmation Photo");
     return false;
@@ -331,8 +343,6 @@ function download(){
   });
 
   html+=`<tr><td><b>Total</b></td><td><b>${tq}</b></td><td><b>${tm}</b></td></tr></table>`;
-
-  /* ✅ ADDED PHOTO */
   html+=`<br><div style="text-align:center;"><img src="${photoData}" width="120"></div>`;
 
   bill.innerHTML=html;
@@ -352,7 +362,6 @@ function submitData(){
 
   if(!checkFields()) return;
 
-  // ✅ FIX: define BEFORE fetch
   const cleanItems = Object.values(items).map(i => ({
     variant: String(i.variant).trim(),
     qty: Number(i.qty) || 0
@@ -360,10 +369,6 @@ function submitData(){
 
   fetch(API_URL,{
     method:"POST",
-
-    // ❌ NO headers
-    // ❌ NO mode: no-cors
-
     body: new URLSearchParams({
       data: JSON.stringify({
         challan: String(challan.value).trim(),
@@ -390,7 +395,6 @@ function submitData(){
       throw new Error(data.message || "Server error");
     }
 
-    // ✅ KEEP YOUR EXISTING LOGIC
     let temp = {};
     (data.notMatched || []).forEach(i=>{
       temp[i.variant] = i;
@@ -400,20 +404,19 @@ function submitData(){
     render();
 
     if(!data.notMatched || data.notMatched.length === 0){
-      alert("✅ Data Submitted");
+      alert("Data Submitted");
       location.reload();
     } else {
-      alert("⚠ Some items not matched");
+      alert("Some items not matched");
     }
 
   })
   .catch(err=>{
     console.error(err);
-    alert("❌ Submit Failed: " + err.message);
+    alert("Submit Failed: " + err.message);
   });
 
 }
- 	
 
 </script>
 
