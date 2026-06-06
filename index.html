@@ -4,7 +4,7 @@
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
@@ -14,12 +14,8 @@ h2 { text-align:center; color:#1a237e; }
 .row input { flex:1; }
 input, select { width:100%; padding:12px; margin:6px 0; font-size:16px; box-sizing:border-box; }
 button { width:100%; padding:10px; margin-top:6px; font-size:14px; border:none; border-radius:6px; background:#1a73e8; color:white; cursor:pointer; }
-#readerBox { display:none; position:relative; margin:8px 0; background:#000; border-radius:8px; overflow:hidden; }
-#reader { width:100%; max-width:400px; margin:auto; position:relative; }
-#reader video { width:100% !important; height:auto !important; display:block; }
-#reader canvas { position:absolute; top:0; left:0; width:100% !important; height:100% !important; }
-#scanLine { position:absolute; left:5%; width:90%; height:2px; background:red; top:50%; z-index:10; pointer-events:none; }
-#closeScan { position:absolute; right:8px; top:8px; background:red; color:white; border-radius:50%; width:32px; height:32px; font-size:18px; z-index:20; border:none; cursor:pointer; line-height:32px; text-align:center; padding:0; }
+#readerBox { display:none; position:relative; margin:8px 0; }
+#closeScan { display:block; background:red; color:white; border-radius:6px; width:100%; margin-bottom:4px; }
 #scanStatus { display:none; text-align:center; padding:8px; margin:4px 0; border-radius:6px; font-size:14px; font-weight:bold; }
 #scanStatus.ready { background:#e8f5e9; color:#2e7d32; }
 #scanStatus.error { background:#ffebee; color:#c62828; }
@@ -57,10 +53,8 @@ td,th { padding:10px; text-align:center; border-bottom:1px solid #eee; }
 <div id="scanStatus"></div>
 
 <div id="readerBox">
-  <button id="closeScan" onclick="closeScanner()">x</button>
-  <div id="reader">
-    <div id="scanLine"></div>
-  </div>
+  <button id="closeScan" onclick="closeScanner()">Close Scanner</button>
+  <div id="reader"></div>
 </div>
 
 <table>
@@ -95,15 +89,12 @@ td,th { padding:10px; text-align:center; border-bottom:1px solid #eee; }
 const API_URL = "https://script.google.com/macros/s/AKfycbxN1ueHxR9seDLWBPOQffVkYOFInQpexU6W8-wJIJ-Nl82CtgjSBf6Q-gB-517orI_k/exec";
 
 let items = {};
+let scanner = null;
 let scanning = false;
 let manualMode = false;
 let scanLock = false;
 let photoData = "";
 let stream;
-
-// Track last N results and pick most frequent
-const HISTORY = 5;
-let codeHistory = [];
 
 const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
@@ -137,101 +128,74 @@ function openScanner() {
   document.getElementById("readerBox").style.display = "block";
   if (scanning) return;
 
-  codeHistory = [];
+  scanner = new Html5Qrcode("reader");
 
-  Quagga.init({
-    inputStream: {
-      name: "Live",
-      type: "LiveStream",
-      target: document.getElementById("reader"),
-      constraints: {
-        facingMode: "environment",
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }
-    },
-    decoder: {
-      readers: [
-        "code_128_reader",
-        "code_39_reader",
-        "ean_reader",
-        "ean_8_reader",
-        "upc_reader",
-        "upc_e_reader"
-      ],
-      multiple: false
-    },
-    locate: true,
-    numOfWorkers: 2,
-    frequency: 10
-  }, function(err) {
-    if (err) {
-      showStatus("Camera error: " + err, "error");
-      return;
+  const config = {
+    fps: 15,
+    // No qrbox — full frame for better 1D barcode detection
+    formatsToSupport: [
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.QR_CODE
+    ],
+    experimentalFeatures: {
+      useBarCodeDetectorIfSupported: true  // uses native BarcodeDetector API on Android Chrome
     }
-    Quagga.start();
-    scanning = true;
-    showStatus("Scanner ready - point at barcode", "info");
-  });
+  };
 
-  Quagga.onDetected(function(result) {
-    if (scanLock) return;
+  scanner.start(
+    { facingMode: "environment" },
+    config,
+    (code) => {
+      if (scanLock) return;
+      scanLock = true;
 
-    const code = result.codeResult.code;
-    if (!code || code.length < 4) return;
+      beep.currentTime = 0;
+      beep.play();
+      showStatus("Scanned: " + code, "info");
 
-    // Add to rolling history
-    codeHistory.push(code);
-    if (codeHistory.length > HISTORY) codeHistory.shift();
+      fetch(API_URL + "?uid=" + encodeURIComponent(code))
+        .then(r => r.json())
+        .then(data => {
+          if (!data.variant) {
+            showStatus("Not Found: " + code, "error");
+            return;
+          }
+          if (!items[data.variant]) {
+            items[data.variant] = { variant: data.variant, qty: 1, mrp: Number(data.mrp) || 0 };
+          } else {
+            items[data.variant].qty++;
+          }
+          showStatus("Added: " + data.variant, "ready");
+          render();
+        })
+        .catch(() => showStatus("API error", "error"));
 
-    // Count frequency of each code in history
-    const freq = {};
-    codeHistory.forEach(c => { freq[c] = (freq[c] || 0) + 1; });
+      setTimeout(() => { scanLock = false; }, 2000);
+    },
+    () => {} // ignore scan errors silently
+  ).catch(err => showStatus("Camera error: " + err, "error"));
 
-    // Find most frequent
-    let bestCode = null, bestCount = 0;
-    Object.keys(freq).forEach(c => {
-      if (freq[c] > bestCount) { bestCode = c; bestCount = freq[c]; }
-    });
-
-    // Fire only when one code dominates (seen 3+ out of last 5)
-    if (bestCount < 3) return;
-
-    codeHistory = [];
-    scanLock = true;
-
-    beep.currentTime = 0;
-    beep.play();
-    showStatus("Scanned: " + bestCode, "info");
-
-    fetch(API_URL + "?uid=" + encodeURIComponent(bestCode))
-      .then(r => r.json())
-      .then(data => {
-        if (!data.variant) {
-          showStatus("Not Found: " + bestCode, "error");
-          return;
-        }
-        if (!items[data.variant]) {
-          items[data.variant] = { variant: data.variant, qty: 1, mrp: Number(data.mrp) || 0 };
-        } else {
-          items[data.variant].qty++;
-        }
-        showStatus("Added: " + data.variant, "ready");
-        render();
-      })
-      .catch(() => showStatus("API error", "error"));
-
-    setTimeout(() => { scanLock = false; }, 2000);
-  });
+  scanning = true;
 }
 
 function closeScanner() {
-  if (scanning) {
-    Quagga.stop();
-    scanning = false;
+  if (scanner && scanning) {
+    scanner.stop().then(() => {
+      scanning = false;
+      scanner = null;
+      document.getElementById("readerBox").style.display = "none";
+      document.getElementById("scanStatus").style.display = "none";
+    }).catch(() => {
+      scanning = false;
+      scanner = null;
+      document.getElementById("readerBox").style.display = "none";
+    });
   }
-  document.getElementById("readerBox").style.display = "none";
-  document.getElementById("scanStatus").style.display = "none";
 }
 
 function toggleEdit() {
