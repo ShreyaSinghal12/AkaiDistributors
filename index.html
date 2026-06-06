@@ -132,6 +132,7 @@ function openScanner() {
 
   const config = {
     fps: 15,
+    videoConstraints: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
     // No qrbox — full frame for better 1D barcode detection
     formatsToSupport: [
       Html5QrcodeSupportedFormats.CODE_128,
@@ -148,7 +149,7 @@ function openScanner() {
   };
 
   scanner.start(
-    { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+    { facingMode: "environment" },
     config,
     (code) => {
       if (scanLock) return;
