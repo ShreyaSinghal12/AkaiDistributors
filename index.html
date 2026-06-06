@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -177,8 +178,8 @@ function openScanner(){
   scanner.start(
     { facingMode:"environment" },
     {
-      fps: 20,
-      qrbox: { width: 280, height: 100 },   // wide rectangle suits barcodes
+      fps: 10,
+      // NO qrbox — full camera frame used, much better for CODE-128 on mobile
       formatsToSupport: formats
     },
     qr => {
