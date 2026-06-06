@@ -101,10 +101,9 @@ let scanLock = false;
 let photoData = "";
 let stream;
 
-// Majority vote — same code must appear this many times in a row before firing
-let lastCode = "";
-let codeCount = 0;
-const VOTE_NEEDED = 3;
+// Track last N results and pick most frequent
+const HISTORY = 5;
+let codeHistory = [];
 
 const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
@@ -138,9 +137,7 @@ function openScanner() {
   document.getElementById("readerBox").style.display = "block";
   if (scanning) return;
 
-  // Reset vote buffer each time scanner opens
-  lastCode = "";
-  codeCount = 0;
+  codeHistory = [];
 
   Quagga.init({
     inputStream: {
@@ -160,9 +157,7 @@ function openScanner() {
         "ean_reader",
         "ean_8_reader",
         "upc_reader",
-        "upc_e_reader",
-        "codabar_reader",
-        "i2of5_reader"
+        "upc_e_reader"
       ],
       multiple: false
     },
@@ -183,38 +178,37 @@ function openScanner() {
     if (scanLock) return;
 
     const code = result.codeResult.code;
-    if (!code) return;
+    if (!code || code.length < 4) return;
 
-    // Confidence check - ignore weak/partial reads
-    const errors = result.codeResult.decodedCodes
-      .filter(x => x.error !== undefined)
-      .map(x => x.error);
-    const avgError = errors.reduce((a, b) => a + b, 0) / (errors.length || 1);
-    if (avgError > 0.15) return;
+    // Add to rolling history
+    codeHistory.push(code);
+    if (codeHistory.length > HISTORY) codeHistory.shift();
 
-    // Majority vote - same code must appear VOTE_NEEDED times in a row
-    if (code === lastCode) {
-      codeCount++;
-    } else {
-      lastCode = code;
-      codeCount = 1;
-    }
-    if (codeCount < VOTE_NEEDED) return;
+    // Count frequency of each code in history
+    const freq = {};
+    codeHistory.forEach(c => { freq[c] = (freq[c] || 0) + 1; });
 
-    // Confirmed - reset and process
-    lastCode = "";
-    codeCount = 0;
+    // Find most frequent
+    let bestCode = null, bestCount = 0;
+    Object.keys(freq).forEach(c => {
+      if (freq[c] > bestCount) { bestCode = c; bestCount = freq[c]; }
+    });
+
+    // Fire only when one code dominates (seen 3+ out of last 5)
+    if (bestCount < 3) return;
+
+    codeHistory = [];
     scanLock = true;
 
     beep.currentTime = 0;
     beep.play();
-    showStatus("Scanned: " + code, "info");
+    showStatus("Scanned: " + bestCode, "info");
 
-    fetch(API_URL + "?uid=" + encodeURIComponent(code))
+    fetch(API_URL + "?uid=" + encodeURIComponent(bestCode))
       .then(r => r.json())
       .then(data => {
         if (!data.variant) {
-          showStatus("Not Found: " + code, "error");
+          showStatus("Not Found: " + bestCode, "error");
           return;
         }
         if (!items[data.variant]) {
