@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
@@ -19,6 +18,7 @@ input, select {
   padding:12px;
   margin:6px 0;
   font-size:16px;
+  box-sizing:border-box;
 }
 
 button {
@@ -30,21 +30,81 @@ button {
   border-radius:6px;
   background:#1a73e8;
   color:white;
+  cursor:pointer;
 }
 
-#readerBox { display:none; position:relative; }
-#reader { width:220px; margin:auto; }
+#readerBox {
+  display:none;
+  position:relative;
+  margin:8px 0;
+  background:#000;
+  border-radius:8px;
+  overflow:hidden;
+}
+
+/* Quagga renders into this div */
+#reader {
+  width:100%;
+  max-width:400px;
+  margin:auto;
+  position:relative;
+}
+
+#reader video {
+  width:100% !important;
+  height:auto !important;
+  display:block;
+}
+
+#reader canvas {
+  position:absolute;
+  top:0; left:0;
+  width:100% !important;
+  height:100% !important;
+}
+
+/* Scan guide line */
+#scanLine {
+  position:absolute;
+  left:5%;
+  width:90%;
+  height:2px;
+  background:red;
+  top:50%;
+  z-index:10;
+  pointer-events:none;
+}
 
 #closeScan {
   position:absolute;
-  right:5px;
-  top:5px;
+  right:8px;
+  top:8px;
   background:red;
   color:white;
   border-radius:50%;
-  width:30px;
-  height:30px;
+  width:32px;
+  height:32px;
+  font-size:18px;
+  z-index:20;
+  border:none;
+  cursor:pointer;
+  line-height:32px;
+  text-align:center;
+  padding:0;
 }
+
+#scanStatus {
+  display:none;
+  text-align:center;
+  padding:8px;
+  margin:4px 0;
+  border-radius:6px;
+  font-size:14px;
+  font-weight:bold;
+}
+#scanStatus.ready { background:#e8f5e9; color:#2e7d32; }
+#scanStatus.error { background:#ffebee; color:#c62828; }
+#scanStatus.info  { background:#e3f2fd; color:#1565c0; }
 
 table {
   width:100%;
@@ -53,11 +113,12 @@ table {
   border-collapse:collapse;
 }
 
-td,th { padding:10px; text-align:center; }
+td,th { padding:10px; text-align:center; border-bottom:1px solid #eee; }
 
 .total { background:#e3f2fd; font-weight:bold; }
 
 #bill { display:none; background:white; padding:20px; }
+#cameraBox { display:none; text-align:center; margin:8px 0; }
 </style>
 </head>
 
@@ -66,53 +127,56 @@ td,th { padding:10px; text-align:center; }
 <h2>AKAI DISTRIBUTORS</h2>
 
 <div class="row">
-<input id="challan" placeholder="Challan No">
-<input type="date" id="date">
+  <input id="challan" placeholder="Challan No">
+  <input type="date" id="date">
 </div>
 
 <select id="dealer">
-<option value="">Select SO</option>
-<option>SAMARENDRA CHANDRA SARKA</option>
-<option>AJAY SINGHA</option>
-<option>SOMEN DAS</option>
-<option>CHANDAN DAS</option>
+  <option value="">Select SO</option>
+  <option>SAMARENDRA CHANDRA SARKA</option>
+  <option>AJAY SINGHA</option>
+  <option>SOMEN DAS</option>
+  <option>CHANDAN DAS</option>
 </select>
 
 <input list="dealerList" id="dealerName" placeholder="Select Dealer">
 <datalist id="dealerList"></datalist>
 
-<button onclick="openScanner()">Scan QR</button>
+<button onclick="openScanner()">Scan Barcode</button>
 <button onclick="toggleEdit()">Manual Edit</button>
 
+<div id="scanStatus"></div>
+
 <div id="readerBox">
-<button id="closeScan" onclick="closeScanner()">x</button>
-<div id="reader"></div>
+  <button id="closeScan" onclick="closeScanner()">x</button>
+  <div id="reader">
+    <div id="scanLine"></div>
+  </div>
 </div>
 
 <table>
-<thead>
-<tr>
-<th>Variant</th>
-<th>Qty</th>
-<th>MRP</th>
-<th id="editHead" style="display:none;">Action</th>
-</tr>
-</thead>
-<tbody id="tbody"></tbody>
-
-<tfoot>
-<tr class="total">
-<td>Total</td>
-<td id="tQty">0</td>
-<td id="tMrp">0</td>
-<td></td>
-</tr>
-</tfoot>
+  <thead>
+    <tr>
+      <th>Variant</th>
+      <th>Qty</th>
+      <th>MRP</th>
+      <th id="editHead" style="display:none;">Action</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+  <tfoot>
+    <tr class="total">
+      <td>Total</td>
+      <td id="tQty">0</td>
+      <td id="tMrp">0</td>
+      <td></td>
+    </tr>
+  </tfoot>
 </table>
 
 <button onclick="openCamera()">Confirmation</button>
 
-<div id="cameraBox" style="display:none;text-align:center;">
+<div id="cameraBox">
   <video id="video" width="150" height="120" autoplay></video><br>
   <button onclick="capturePhoto()">Click</button>
   <button onclick="retakePhoto()">Retake</button>
@@ -130,120 +194,149 @@ td,th { padding:10px; text-align:center; }
 const API_URL = "https://script.google.com/macros/s/AKfycbxN1ueHxR9seDLWBPOQffVkYOFInQpexU6W8-wJIJ-Nl82CtgjSBf6Q-gB-517orI_k/exec";
 
 let items = {};
-let scanner, scanning=false;
+let scanning = false;
 let manualMode = false;
 let scanLock = false;
-
-const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-
 let photoData = "";
 let stream;
 
-/* LOAD DEALERS */
-function loadDealers(){
-  fetch(API_URL + "?type=dealers")
-  .then(res=>res.json())
-  .then(data=>{
-    let list = document.getElementById("dealerList");
-    list.innerHTML="";
-    data.forEach(d=>{
-      let opt=document.createElement("option");
-      opt.value=d;
-      list.appendChild(opt);
-    });
-  });
-}
-window.onload = loadDealers;
+const beep = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
-/* SCANNER */
-function openScanner(){
-  document.getElementById("readerBox").style.display="block";
-  if(scanning) return;
-
-  scanner = new Html5Qrcode("reader");
-
-  // ✅ FIX: support both QR codes AND 1D barcodes (EAN-13, CODE-128, CODE-39 etc.)
-  const formats = [
-    Html5QrcodeSupportedFormats.QR_CODE,
-    Html5QrcodeSupportedFormats.EAN_13,
-    Html5QrcodeSupportedFormats.EAN_8,
-    Html5QrcodeSupportedFormats.CODE_128,
-    Html5QrcodeSupportedFormats.CODE_39,
-    Html5QrcodeSupportedFormats.ITF,
-    Html5QrcodeSupportedFormats.UPC_A,
-    Html5QrcodeSupportedFormats.UPC_E,
-    Html5QrcodeSupportedFormats.DATA_MATRIX
-  ];
-
-  scanner.start(
-    { facingMode:"environment" },
-    {
-      fps: 10,
-      // NO qrbox — full camera frame used, much better for CODE-128 on mobile
-      formatsToSupport: formats
-    },
-    qr => {
-
-      if(scanLock) return;
-      scanLock = true;
-
-      beep.currentTime = 0;
-      beep.play();
-
-      fetch(API_URL+"?uid="+encodeURIComponent(qr))
-      .then(r=>r.json())
-      .then(data=>{
-
-        if(!data.variant){
-          alert("Not Found - "+qr);
-          return;
-        }
-
-        if(!items[data.variant]){
-          items[data.variant] = {
-            variant:data.variant,
-            qty:1,
-            mrp:Number(data.mrp)||0
-          };
-        } else {
-          items[data.variant].qty++;
-        }
-
-        render();
-      });
-
-      setTimeout(()=>scanLock=false,1500);
-    }
-  );
-
-  scanning=true;
-}
-
-function closeScanner(){
-  if(scanner){
-    scanner.stop().then(()=>{
-      scanning=false;
-      readerBox.style.display="none";
-    });
+function showStatus(msg, type) {
+  const el = document.getElementById("scanStatus");
+  el.textContent = msg;
+  el.className = "scanStatus " + type;
+  el.style.display = "block";
+  if (type === "ready" || type === "error") {
+    setTimeout(() => { el.style.display = "none"; }, 3000);
   }
 }
 
-function toggleEdit(){
-  manualMode=!manualMode;
-  editHead.style.display = manualMode ? "" : "none";
+/* LOAD DEALERS */
+function loadDealers() {
+  fetch(API_URL + "?type=dealers")
+    .then(res => res.json())
+    .then(data => {
+      let list = document.getElementById("dealerList");
+      list.innerHTML = "";
+      data.forEach(d => {
+        let opt = document.createElement("option");
+        opt.value = d;
+        list.appendChild(opt);
+      });
+    })
+    .catch(() => {});
+}
+window.onload = loadDealers;
+
+/* SCANNER — QuaggaJS handles CODE-128, CODE-39, EAN-13 etc. */
+function openScanner() {
+  document.getElementById("readerBox").style.display = "block";
+  if (scanning) return;
+
+  Quagga.init({
+    inputStream: {
+      name: "Live",
+      type: "LiveStream",
+      target: document.getElementById("reader"),
+      constraints: {
+        facingMode: "environment",
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    },
+    decoder: {
+      // All common 1D barcode formats
+      readers: [
+        "code_128_reader",
+        "code_39_reader",
+        "ean_reader",
+        "ean_8_reader",
+        "upc_reader",
+        "upc_e_reader",
+        "codabar_reader",
+        "i2of5_reader"
+      ],
+      multiple: false
+    },
+    locate: true,
+    numOfWorkers: 2,
+    frequency: 10
+  }, function(err) {
+    if (err) {
+      showStatus("Camera error: " + err, "error");
+      return;
+    }
+    Quagga.start();
+    scanning = true;
+    showStatus("Scanner ready — point at barcode", "info");
+  });
+
+  Quagga.onDetected(function(result) {
+    if (scanLock) return;
+
+    const code = result.codeResult.code;
+    if (!code) return;
+
+    // Confidence check — ignore weak reads
+    const errors = result.codeResult.decodedCodes
+      .filter(x => x.error !== undefined)
+      .map(x => x.error);
+    const avgError = errors.reduce((a, b) => a + b, 0) / (errors.length || 1);
+    if (avgError > 0.25) return;
+
+    scanLock = true;
+    beep.currentTime = 0;
+    beep.play();
+
+    showStatus("Scanned: " + code, "info");
+
+    fetch(API_URL + "?uid=" + encodeURIComponent(code))
+      .then(r => r.json())
+      .then(data => {
+        if (!data.variant) {
+          showStatus("Not Found: " + code, "error");
+          return;
+        }
+        if (!items[data.variant]) {
+          items[data.variant] = { variant: data.variant, qty: 1, mrp: Number(data.mrp) || 0 };
+        } else {
+          items[data.variant].qty++;
+        }
+        showStatus("Added: " + data.variant, "ready");
+        render();
+      })
+      .catch(() => showStatus("API error", "error"));
+
+    setTimeout(() => { scanLock = false; }, 2000);
+  });
+}
+
+function closeScanner() {
+  if (scanning) {
+    Quagga.stop();
+    scanning = false;
+  }
+  document.getElementById("readerBox").style.display = "none";
+  document.getElementById("scanStatus").style.display = "none";
+}
+
+function toggleEdit() {
+  manualMode = !manualMode;
+  document.getElementById("editHead").style.display = manualMode ? "" : "none";
   render();
 }
 
-function render(){
-  let html="";
-  let tq=0, tm=0;
+function render() {
+  let html = "";
+  let tq = 0, tm = 0;
 
-  Object.keys(items).forEach(key=>{
-    let i=items[key];
-    tq+=Number(i.qty)||0;
-    tm+=(Number(i.qty)||0)*(Number(i.mrp)||0);
+  Object.keys(items).forEach(key => {
+    let i = items[key];
+    tq += Number(i.qty) || 0;
+    tm += (Number(i.qty) || 0) * (Number(i.mrp) || 0);
 
-    html+=`<tr>
+    html += `<tr>
       <td>${manualMode ? `<input value="${i.variant}">` : i.variant}</td>
       <td>${manualMode ? `<input type="number" value="${i.qty}" onchange="items['${key}'].qty=Number(this.value);render()">` : i.qty}</td>
       <td>${manualMode ? `<input type="number" value="${i.mrp}" onchange="items['${key}'].mrp=Number(this.value);render()">` : i.mrp}</td>
@@ -251,82 +344,78 @@ function render(){
     </tr>`;
   });
 
-  if(manualMode){
-    html+=`<tr><td colspan="4"><button onclick="addItem()">+ Add Item</button></td></tr>`;
+  if (manualMode) {
+    html += `<tr><td colspan="4"><button onclick="addItem()">+ Add Item</button></td></tr>`;
   }
 
-  tbody.innerHTML=html;
-  tQty.innerText=tq;
-  tMrp.innerText=tm;
+  document.getElementById("tbody").innerHTML = html;
+  document.getElementById("tQty").innerText = tq;
+  document.getElementById("tMrp").innerText = tm;
 }
 
-function addItem(){
-  let name=prompt("Enter Variant");
-  if(!name) return;
-  items[name]={variant:name,qty:1,mrp:0};
+function addItem() {
+  let name = prompt("Enter Variant");
+  if (!name) return;
+  items[name] = { variant: name, qty: 1, mrp: 0 };
   render();
 }
 
-function removeItem(k){
+function removeItem(k) {
   delete items[k];
   render();
 }
 
-function checkFields(){
-  if(!challan.value || !dealer.value || !date.value){
+function checkFields() {
+  if (!challan.value || !dealer.value || !date.value) {
     alert("Enter Challan, SO & Date");
     return false;
   }
-  if(!dealerName.value){
+  if (!dealerName.value) {
     alert("Select Dealer");
     return false;
   }
-
-  if(!photoData){
+  if (!photoData) {
     alert("Capture Confirmation Photo");
     return false;
   }
-
   return true;
 }
 
 /* CAMERA */
-function openCamera(){
-  navigator.mediaDevices.getUserMedia({video:true})
-  .then(s=>{
-    stream=s;
-    document.getElementById("cameraBox").style.display="block";
-    document.getElementById("video").srcObject=s;
-  });
+function openCamera() {
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(s => {
+      stream = s;
+      document.getElementById("cameraBox").style.display = "block";
+      document.getElementById("video").srcObject = s;
+    });
 }
 
-function capturePhoto(){
-  let ctx=canvas.getContext("2d");
-  ctx.drawImage(video,0,0,150,120);
-  photoData=canvas.toDataURL("image/jpeg");
-
-  stream.getTracks().forEach(t=>t.stop());
-  video.srcObject=null;
-
-  preview.innerHTML=`<img src="${photoData}" width="120">`;
+function capturePhoto() {
+  let canvas = document.getElementById("canvas");
+  let video = document.getElementById("video");
+  let ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, 150, 120);
+  photoData = canvas.toDataURL("image/jpeg");
+  stream.getTracks().forEach(t => t.stop());
+  video.srcObject = null;
+  document.getElementById("preview").innerHTML = `<img src="${photoData}" width="120">`;
 }
 
-function retakePhoto(){
-  photoData="";
-  preview.innerHTML="";
+function retakePhoto() {
+  photoData = "";
+  document.getElementById("preview").innerHTML = "";
   openCamera();
 }
 
 /* DOWNLOAD */
-function download(){
+function download() {
+  if (!checkFields()) return;
 
-  if(!checkFields()) return;
+  let tq = 0, tm = 0;
+  let time = new Date().toLocaleTimeString("en-IN");
 
-  let tq=0, tm=0;
-  let now = new Date();
-  let time = now.toLocaleTimeString("en-IN");
-
-  let html=`
+  let html = `
   <h2 style="text-align:center;">AKAI DISTRIBUTORS</h2>
   <p><b>SO:</b> ${dealer.value}</p>
   <p><b>Dealer:</b> ${dealerName.value}</p>
@@ -334,42 +423,41 @@ function download(){
   <p><b>Time:</b> ${time}</p>
   <hr>
   <table border="1" style="width:100%;border-collapse:collapse;">
-  <tr><th>Variant</th><th>Qty</th><th>MRP</th></tr>
-  `;
+  <tr><th>Variant</th><th>Qty</th><th>MRP</th></tr>`;
 
-  Object.values(items).forEach(i=>{
-    tq+=i.qty;
-    tm+=i.qty*i.mrp;
-    html+=`<tr><td>${i.variant}</td><td>${i.qty}</td><td>${i.mrp}</td></tr>`;
+  Object.values(items).forEach(i => {
+    tq += i.qty;
+    tm += i.qty * i.mrp;
+    html += `<tr><td>${i.variant}</td><td>${i.qty}</td><td>${i.mrp}</td></tr>`;
   });
 
-  html+=`<tr><td><b>Total</b></td><td><b>${tq}</b></td><td><b>${tm}</b></td></tr></table>`;
-  html+=`<br><div style="text-align:center;"><img src="${photoData}" width="120"></div>`;
+  html += `<tr><td><b>Total</b></td><td><b>${tq}</b></td><td><b>${tm}</b></td></tr></table>`;
+  html += `<br><div style="text-align:center;"><img src="${photoData}" width="120"></div>`;
 
-  bill.innerHTML=html;
-  bill.style.display="block";
+  let bill = document.getElementById("bill");
+  bill.innerHTML = html;
+  bill.style.display = "block";
 
-  html2canvas(bill).then(canvas=>{
-    let a=document.createElement("a");
-    a.href=canvas.toDataURL();
-    a.download="Bill.jpg";
+  html2canvas(bill).then(canvas => {
+    let a = document.createElement("a");
+    a.href = canvas.toDataURL();
+    a.download = "Bill.jpg";
     a.click();
-    bill.style.display="none";
+    bill.style.display = "none";
   });
 }
 
 /* SUBMIT */
-function submitData(){
-
-  if(!checkFields()) return;
+function submitData() {
+  if (!checkFields()) return;
 
   const cleanItems = Object.values(items).map(i => ({
     variant: String(i.variant).trim(),
     qty: Number(i.qty) || 0
   }));
 
-  fetch(API_URL,{
-    method:"POST",
+  fetch(API_URL, {
+    method: "POST",
     body: new URLSearchParams({
       data: JSON.stringify({
         challan: String(challan.value).trim(),
@@ -381,45 +469,32 @@ function submitData(){
       })
     })
   })
-  .then(async (res)=>{
-
+  .then(async res => {
     let text = await res.text();
-
     let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error("Invalid JSON from server");
-    }
+    try { data = JSON.parse(text); }
+    catch { throw new Error("Invalid JSON from server"); }
 
-    if(data.status !== "success"){
-      throw new Error(data.message || "Server error");
-    }
+    if (data.status !== "success") throw new Error(data.message || "Server error");
 
     let temp = {};
-    (data.notMatched || []).forEach(i=>{
-      temp[i.variant] = i;
-    });
-
+    (data.notMatched || []).forEach(i => { temp[i.variant] = i; });
     items = temp;
     render();
 
-    if(!data.notMatched || data.notMatched.length === 0){
+    if (!data.notMatched || data.notMatched.length === 0) {
       alert("Data Submitted");
       location.reload();
     } else {
       alert("Some items not matched");
     }
-
   })
-  .catch(err=>{
+  .catch(err => {
     console.error(err);
     alert("Submit Failed: " + err.message);
   });
-
 }
 
 </script>
-
 </body>
 </html>
